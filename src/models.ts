@@ -14,6 +14,8 @@ export interface ActivityMetrics {
   writeBytes: number;
   activeConnections: number;
   timestamp: Date;
+  cpuPercent?: number;
+  memoryRss?: number;
 }
 
 export enum InstanceStatus {

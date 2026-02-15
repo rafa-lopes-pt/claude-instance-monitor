@@ -3,7 +3,7 @@ import { StateDetector } from './state-detector';
 import { TuiRenderer } from './ui/renderer';
 import { groupByDirectory } from './utils';
 import { initSticky, toggleSticky, StickyState } from './sticky';
-import { initNotify, toggleNotify, checkTransitionsAndNotify, NotifyState } from './notifications';
+import { initNotify, toggleNotify, trackIdleState, checkAndNotify, NotifyState } from './notifications';
 
 async function main() {
   const monitor = new Monitor();
@@ -53,8 +53,9 @@ async function main() {
       }
     }
 
-    // Check transitions before updating instanceMap so we can compare old vs new
-    checkTransitionsAndNotify(notifyState, instanceMap, newInstances);
+    // Always track idle state (even when notifications are off)
+    trackIdleState(newInstances);
+    checkAndNotify(notifyState, newInstances);
 
     for (const instance of newInstances) {
       instanceMap.set(instance.pid, instance);

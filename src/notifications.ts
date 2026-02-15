@@ -21,18 +21,55 @@ export function toggleNotify(state: NotifyState): NotifyState {
   return { ...state, enabled: !state.enabled };
 }
 
-export function checkTransitionsAndNotify(
+const IDLE_NOTIFY_DELAY_MS = 5000;
+const NOTIFY_THROTTLE_MS = 30000;
+
+// Track when each PID first went idle (always updated, regardless of enabled state)
+const idleSince = new Map<number, number>();
+const lastNotifiedByPid = new Map<number, number>();
+
+export function trackIdleState(newInstances: ClaudeInstance[]): void {
+  const now = Date.now();
+  const activePids = new Set<number>();
+
+  for (const instance of newInstances) {
+    activePids.add(instance.pid);
+    if (instance.status === InstanceStatus.Idle) {
+      if (!idleSince.has(instance.pid)) {
+        idleSince.set(instance.pid, now);
+      }
+    } else {
+      idleSince.delete(instance.pid);
+    }
+  }
+
+  for (const pid of idleSince.keys()) {
+    if (!activePids.has(pid)) {
+      idleSince.delete(pid);
+      lastNotifiedByPid.delete(pid);
+    }
+  }
+}
+
+export function checkAndNotify(
   state: NotifyState,
-  oldInstances: Map<number, ClaudeInstance>,
   newInstances: ClaudeInstance[],
 ): void {
   if (!state.enabled) return;
 
+  const now = Date.now();
+
   for (const instance of newInstances) {
-    const old = oldInstances.get(instance.pid);
-    if (old && old.status === InstanceStatus.Active && instance.status === InstanceStatus.Idle) {
-      sendNotification(instance);
-    }
+    if (instance.status !== InstanceStatus.Idle) continue;
+
+    const idleStart = idleSince.get(instance.pid);
+    if (!idleStart || now - idleStart < IDLE_NOTIFY_DELAY_MS) continue;
+
+    const lastSent = lastNotifiedByPid.get(instance.pid) ?? 0;
+    if (now - lastSent < NOTIFY_THROTTLE_MS) continue;
+
+    lastNotifiedByPid.set(instance.pid, now);
+    sendNotification(instance);
   }
 }
 

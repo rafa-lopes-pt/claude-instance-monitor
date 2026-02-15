@@ -2,7 +2,7 @@ import * as blessed from 'blessed';
 import { ProjectGroup } from '../models';
 import { StickyState, DisplayServer } from '../sticky';
 import { NotifyState } from '../notifications';
-import { getStatusText, getStatusColor, formatDuration, extractTtyName } from '../utils';
+import { getStatusText, getStatusColor, formatDuration, extractTtyName, formatCpuPercent, formatMemory } from '../utils';
 
 export class TuiRenderer {
   private screen: blessed.Widgets.Screen;
@@ -103,12 +103,16 @@ export class TuiRenderer {
         const statusColor = getStatusColor(instance.status);
         const ttyDisplay = extractTtyName(instance.tty);
         const duration = formatDuration(instance.lastStatusChange);
+        const cpu = formatCpuPercent(instance.metrics.cpuPercent);
+        const mem = formatMemory(instance.metrics.memoryRss);
 
         const line =
           `  ${treeChar} PID ${String(instance.pid).padEnd(5)}  | ` +
           `${ttyDisplay.padEnd(8)} | ` +
           `{${statusColor}-fg}${statusText.padEnd(12)}{/${statusColor}-fg} | ` +
-          `${duration}`;
+          `${duration.padEnd(4)} | ` +
+          `CPU: ${cpu.padEnd(6)} | ` +
+          `MEM: ${mem}`;
 
         items.push(line);
       }

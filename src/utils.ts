@@ -85,3 +85,29 @@ export function formatDuration(since: Date): string {
     return `${Math.floor(secs / 3600)}h`;
   }
 }
+
+export function formatCpuPercent(percent: number | undefined): string {
+  if (percent === undefined) {
+    return 'N/A';
+  }
+  return percent < 10 ? percent.toFixed(1) + '%' : Math.round(percent) + '%';
+}
+
+export function formatMemory(bytes: number | undefined): string {
+  if (bytes === undefined) {
+    return 'N/A';
+  }
+
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return Math.round(kb) + ' KB';
+  }
+
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1024) {
+    return mb < 100 ? mb.toFixed(1) + ' MB' : Math.round(mb) + ' MB';
+  }
+
+  const gb = bytes / (1024 * 1024 * 1024);
+  return gb.toFixed(2) + ' GB';
+}

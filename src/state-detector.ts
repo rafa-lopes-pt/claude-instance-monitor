@@ -10,6 +10,7 @@ export class StateDetector {
       const cpuTime = await this.readCpuTime(pid);
       const ioCounters = await this.readIoCounters(pid);
       const activeConnections = await this.countNetworkConnections(pid);
+      const memoryRss = await this.readMemory(pid);
 
       if (cpuTime === null || ioCounters === null) {
         return null;
@@ -21,6 +22,7 @@ export class StateDetector {
         writeBytes: ioCounters.write,
         activeConnections,
         timestamp: new Date(),
+        memoryRss: memoryRss ?? undefined,
       };
     } catch {
       return null;
@@ -97,12 +99,33 @@ export class StateDetector {
     }
   }
 
+  private async readMemory(pid: number): Promise<number | null> {
+    try {
+      const statmPath = `/proc/${pid}/statm`;
+      const statm = await fs.readFile(statmPath, 'utf-8');
+
+      const fields = statm.trim().split(/\s+/);
+      const rssPages = parseInt(fields[1], 10);
+
+      if (isNaN(rssPages)) {
+        return null;
+      }
+
+      const pageSize = 4096;
+      return rssPages * pageSize;
+    } catch {
+      return null;
+    }
+  }
+
   detectStatus(instance: ClaudeInstance, currentMetrics: ActivityMetrics): InstanceStatus {
     const prevMetrics = this.prevMetrics.get(instance.pid);
 
     let status: InstanceStatus;
     if (prevMetrics) {
-      status = this.analyzeMetrics(instance.pid, prevMetrics, currentMetrics);
+      const result = this.analyzeMetrics(instance.pid, prevMetrics, currentMetrics);
+      status = result.status;
+      currentMetrics.cpuPercent = result.cpuPercent;
     } else {
       status = InstanceStatus.Idle;
     }
@@ -112,23 +135,31 @@ export class StateDetector {
     return status;
   }
 
-  private analyzeMetrics(pid: number, prev: ActivityMetrics, curr: ActivityMetrics): InstanceStatus {
+  private analyzeMetrics(
+    pid: number,
+    prev: ActivityMetrics,
+    curr: ActivityMetrics
+  ): { status: InstanceStatus; cpuPercent: number } {
     const elapsed = curr.timestamp.getTime() - prev.timestamp.getTime();
 
     if (elapsed === 0) {
-      return InstanceStatus.Idle;
+      return { status: InstanceStatus.Idle, cpuPercent: 0 };
     }
 
     const cpuDelta = Math.max(0, curr.cpuTime - prev.cpuTime);
     const readDelta = Math.max(0, curr.readBytes - prev.readBytes);
     const writeDelta = Math.max(0, curr.writeBytes - prev.writeBytes);
 
+    const elapsedSeconds = elapsed / 1000;
+    const ticksPerSecond = cpuDelta / elapsedSeconds;
+    const cpuPercent = ticksPerSecond;
+
     // Thresholds calibrated from real measurements:
     // Idle Claude: ~57 B/s rchar, ~114 B/s wchar, ~2 CPU ticks/s
     // Active Claude: ~700 KB/s rchar, ~42 KB/s wchar, ~96 CPU ticks/s
-    const CPU_THRESHOLD = 10;
-    const IO_THRESHOLD = 4096;
-    const ACTIVITY_DEBOUNCE_MS = 3000;
+    const CPU_THRESHOLD = 50;
+    const IO_THRESHOLD = 16384;
+    const ACTIVITY_DEBOUNCE_MS = 5000;
 
     const hasActivity =
       cpuDelta > CPU_THRESHOLD ||
@@ -137,7 +168,7 @@ export class StateDetector {
 
     if (hasActivity) {
       this.lastActivityTime.set(pid, new Date());
-      return InstanceStatus.Active;
+      return { status: InstanceStatus.Active, cpuPercent };
     }
 
     // Debounce: keep Active for a few seconds after last burst
@@ -145,10 +176,10 @@ export class StateDetector {
     if (lastActivity) {
       const timeSinceActivity = Date.now() - lastActivity.getTime();
       if (timeSinceActivity < ACTIVITY_DEBOUNCE_MS) {
-        return InstanceStatus.Active;
+        return { status: InstanceStatus.Active, cpuPercent };
       }
     }
 
-    return InstanceStatus.Idle;
+    return { status: InstanceStatus.Idle, cpuPercent };
   }
 }
